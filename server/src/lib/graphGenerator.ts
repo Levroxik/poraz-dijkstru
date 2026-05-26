@@ -51,46 +51,117 @@ function getNodeCountRange(difficulty: Difficulty): { min: number; max: number }
   }
 }
 
-// Build a spanning tree first to guarantee connectivity, then add extra edges
-function buildConnectedGraph(nodeCount: number, rand: () => number): Edge[] {
+function distance(a: Node, b: Node): number {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+// Check if two segments AB and CD intersect (excluding shared endpoints)
+function segmentsCross(a: Node, b: Node, c: Node, d: Node): boolean {
+  if (a.id === c.id || a.id === d.id || b.id === c.id || b.id === d.id) return false;
+  const ccw = (p1: Node, p2: Node, p3: Node): number =>
+    (p3.y - p1.y) * (p2.x - p1.x) - (p2.y - p1.y) * (p3.x - p1.x);
+  const d1 = ccw(c, d, a);
+  const d2 = ccw(c, d, b);
+  const d3 = ccw(a, b, c);
+  const d4 = ccw(a, b, d);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+         ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+// Build graph using positions: spanning tree via nearest neighbor, extras prefer short edges
+function buildConnectedGraph(nodes: Node[], rand: () => number): Edge[] {
+  const nodeCount = nodes.length;
   const edges: Edge[] = [];
+  const edgeList: Array<{ a: Node; b: Node }> = [];
   const edgeSet = new Set<string>();
 
-  const addEdge = (from: string, to: string, weight: number): void => {
-    const key = from < to ? `${from}-${to}` : `${to}-${from}`;
-    if (edgeSet.has(key)) return;
-    edgeSet.add(key);
-    edges.push({ from, to, weight });
+  // Compute distance range for weight normalization
+  let minD = Infinity;
+  let maxD = 0;
+  for (let i = 0; i < nodeCount; i++) {
+    for (let j = i + 1; j < nodeCount; j++) {
+      const d = distance(nodes[i], nodes[j]);
+      if (d < minD) minD = d;
+      if (d > maxD) maxD = d;
+    }
+  }
+  const range = maxD - minD || 1;
+
+  // Weight 1–10, correlated with distance (closer = smaller, with mild jitter)
+  const weightFor = (a: Node, b: Node): number => {
+    const norm = (distance(a, b) - minD) / range;
+    const base = 1 + norm * 9;
+    const jitter = (rand() - 0.5) * 1.5;
+    return Math.max(1, Math.min(10, Math.round(base + jitter)));
   };
 
-  // Shuffle node indices to create a random spanning tree via random insertion order
+  const addEdge = (i: number, j: number): boolean => {
+    const lo = Math.min(i, j);
+    const hi = Math.max(i, j);
+    const key = `${lo}-${hi}`;
+    if (edgeSet.has(key)) return false;
+    edgeSet.add(key);
+    const w = weightFor(nodes[lo], nodes[hi]);
+    edges.push({ from: `node_${lo}`, to: `node_${hi}`, weight: w });
+    edgeList.push({ a: nodes[lo], b: nodes[hi] });
+    return true;
+  };
+
+  // Would adding this edge cross too many existing edges? Limit visual clutter.
+  const crossingCount = (i: number, j: number): number => {
+    const a = nodes[i];
+    const b = nodes[j];
+    let count = 0;
+    for (const e of edgeList) {
+      if (segmentsCross(a, b, e.a, e.b)) count++;
+    }
+    return count;
+  };
+
+  // Spanning tree: connect each new node to its NEAREST already-connected node
   const indices = Array.from({ length: nodeCount }, (_, i) => i);
   for (let i = indices.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [indices[i], indices[j]] = [indices[j], indices[i]];
   }
 
-  // Connect each new node to a random already-connected node (Prim-like)
-  const connected = [indices[0]];
+  const connected: number[] = [indices[0]];
   for (let i = 1; i < indices.length; i++) {
-    const newNode = indices[i];
-    const existingNode = connected[Math.floor(rand() * connected.length)];
-    const weight = Math.floor(rand() * 10) + 1;
-    const fromId = `node_${existingNode}`;
-    const toId = `node_${newNode}`;
-    addEdge(fromId, toId, weight);
-    connected.push(newNode);
+    const newIdx = indices[i];
+    let nearest = connected[0];
+    let nearestDist = distance(nodes[newIdx], nodes[nearest]);
+    for (const c of connected) {
+      const d = distance(nodes[newIdx], nodes[c]);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = c;
+      }
+    }
+    addEdge(newIdx, nearest);
+    connected.push(newIdx);
   }
 
-  // Add extra random edges for density (roughly 40% more edges than minimum)
-  const extraEdges = Math.floor(nodeCount * 0.4);
-  for (let attempt = 0; attempt < extraEdges * 3; attempt++) {
-    if (edges.length - (nodeCount - 1) >= extraEdges) break;
-    const a = Math.floor(rand() * nodeCount);
-    const b = Math.floor(rand() * nodeCount);
-    if (a === b) continue;
-    const weight = Math.floor(rand() * 10) + 1;
-    addEdge(`node_${a}`, `node_${b}`, weight);
+  // Extra edges: candidate pool of all unconnected pairs sorted by distance.
+  // Pick short ones, reject those that would create excessive edge crossings.
+  const candidates: { i: number; j: number; d: number }[] = [];
+  for (let i = 0; i < nodeCount; i++) {
+    for (let j = i + 1; j < nodeCount; j++) {
+      const key = `${i}-${j}`;
+      if (edgeSet.has(key)) continue;
+      candidates.push({ i, j, d: distance(nodes[i], nodes[j]) });
+    }
+  }
+  candidates.sort((a, b) => a.d - b.d);
+
+  const targetExtras = Math.floor(nodeCount * 0.35);
+  let added = 0;
+  for (const c of candidates) {
+    if (added >= targetExtras) break;
+    // Skip edges that would cross 2+ existing edges (keeps graph readable)
+    if (crossingCount(c.i, c.j) >= 2) continue;
+    // Small random rejection to add variety in seed-driven output
+    if (rand() < 0.15) continue;
+    if (addEdge(c.i, c.j)) added++;
   }
 
   return edges;
@@ -101,16 +172,14 @@ export function generateGraph(difficulty: Difficulty, seed: number): Graph {
   const { min, max } = getNodeCountRange(difficulty);
   const nodeCount = min + Math.floor(rand() * (max - min + 1));
 
-  // Shuffle names so every graph uses a different subset
   const shuffledNames = [...INTERSECTION_NAMES];
   for (let i = shuffledNames.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [shuffledNames[i], shuffledNames[j]] = [shuffledNames[j], shuffledNames[i]];
   }
 
-  // Grid-based layout: divide canvas into cells, place one node per cell with jitter.
-  // Prevents clustering and ensures even spatial distribution.
-  const PADDING = 70;
+  // Grid-based layout: divide canvas into cells, one node per cell with jitter.
+  const PADDING = 80;
   const CANVAS_W = 800;
   const CANVAS_H = 580;
   const usableW = CANVAS_W - 2 * PADDING;
@@ -119,7 +188,6 @@ export function generateGraph(difficulty: Difficulty, seed: number): Graph {
   const cols = Math.ceil(Math.sqrt(nodeCount * 1.4));
   const rows = Math.ceil(nodeCount / cols);
 
-  // Build all cell centres, shuffle, pick nodeCount of them
   const cells: { cx: number; cy: number }[] = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -134,8 +202,9 @@ export function generateGraph(difficulty: Difficulty, seed: number): Graph {
     [cells[i], cells[j]] = [cells[j], cells[i]];
   }
 
-  const jitterX = (usableW / cols) * 0.28;
-  const jitterY = (usableH / rows) * 0.28;
+  // Smaller jitter to keep nodes well within their cells — reduces label overlap
+  const jitterX = (usableW / cols) * 0.18;
+  const jitterY = (usableH / rows) * 0.18;
 
   const nodes: Node[] = Array.from({ length: nodeCount }, (_, i) => {
     const cell = cells[i];
@@ -149,18 +218,25 @@ export function generateGraph(difficulty: Difficulty, seed: number): Graph {
     };
   });
 
-  const edges = buildConnectedGraph(nodeCount, rand);
+  const edges = buildConnectedGraph(nodes, rand);
 
-  // Pick start and end nodes that are different
-  const startIndex = Math.floor(rand() * nodeCount);
-  let endIndex = Math.floor(rand() * (nodeCount - 1));
-  if (endIndex >= startIndex) endIndex += 1;
+  // Pick start/end to be FAR APART so the gameplay has meaningful path-finding
+  const allPairs: { i: number; j: number; d: number }[] = [];
+  for (let i = 0; i < nodeCount; i++) {
+    for (let j = i + 1; j < nodeCount; j++) {
+      allPairs.push({ i, j, d: distance(nodes[i], nodes[j]) });
+    }
+  }
+  allPairs.sort((a, b) => b.d - a.d);
+  // Pick randomly from the top-5 most-distant pairs for variety
+  const topK = Math.min(5, allPairs.length);
+  const picked = allPairs[Math.floor(rand() * topK)];
 
   return {
     nodes,
     edges,
     seed,
-    start: `node_${startIndex}`,
-    end: `node_${endIndex}`,
+    start: `node_${picked.i}`,
+    end: `node_${picked.j}`,
   };
 }

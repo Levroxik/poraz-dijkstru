@@ -105,7 +105,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   rank: null,
   isLoading: false,
   error: null,
-  tutorialOpen: !localStorage.getItem('tutorial_seen'),
+  tutorialOpen: true,
 
   startGame: (graph: Graph) => {
     set({
@@ -237,8 +237,5 @@ export const useGameStore = create<GameState>((set, get) => ({
   setPlayerName: (name: string) => set({ playerName: name }),
   setDifficulty: (d) => set({ difficulty: d }),
   openTutorial: () => set({ tutorialOpen: true }),
-  closeTutorial: () => {
-    localStorage.setItem('tutorial_seen', '1');
-    set({ tutorialOpen: false });
-  },
+  closeTutorial: () => set({ tutorialOpen: false }),
 }));

@@ -6,6 +6,7 @@ import { GameControls } from './components/GameControls';
 import { ResultScreen } from './components/ResultScreen';
 import { TutorialScreen } from './components/TutorialScreen';
 import { useGameStore } from './store/gameStore';
+import { runDijkstraWithSnapshots } from './lib/dijkstraClient';
 
 function App() {
   const { phase, playerPath, graph, runDijkstra, tutorialOpen } = useGameStore();
@@ -17,7 +18,8 @@ function App() {
       playerPath.length > 0 &&
       playerPath[playerPath.length - 1] === graph.end
     ) {
-      runDijkstra([], [], 0);
+      const result = runDijkstraWithSnapshots(graph, graph.start, graph.end);
+      runDijkstra(result.snapshots, result.path, result.distance);
     }
   }, [playerPath, phase, graph, runDijkstra]);
 

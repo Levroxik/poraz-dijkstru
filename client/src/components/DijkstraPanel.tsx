@@ -1,21 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useGameStore } from '../store/gameStore';
-
-const nodeNames: Record<string, string> = {
-  'node_0': 'Náměstí',
-  'node_1': 'Radnice',
-  'node_2': 'Nádraží',
-  'node_3': 'Muzeum',
-  'node_4': 'Tržiště',
-  'node_5': 'Nemocnice',
-  'node_6': 'Univerzita',
-  'node_7': 'Park',
-  'node_8': 'Letiště',
-  'node_9': 'Stadion',
-};
 
 export const DijkstraPanel: React.FC = () => {
   const { phase, dijkstraSnapshots, currentSnapshotIndex, nextDijkstraStep, graph } = useGameStore();
+
+  const nodeNames = useMemo<Record<string, string>>(() => {
+    if (!graph) return {};
+    return Object.fromEntries(graph.nodes.map((n) => [n.id, n.name]));
+  }, [graph]);
+
+  const startName = graph ? nodeNames[graph.start] || graph.start : '';
+  const endName = graph ? nodeNames[graph.end] || graph.end : '';
 
   useEffect(() => {
     if (phase !== 'dijkstra_running') return;
@@ -33,7 +28,9 @@ export const DijkstraPanel: React.FC = () => {
         <h3 className="panel-title">Dijkstrův algoritmus</h3>
         <div className="panel-placeholder">
           <p>Dijkstrův algoritmus se spustí automaticky po dokončení vaší cesty.</p>
-          <p className="hint-text">Klikejte na uzly na mapě a najděte nejkratší cestu od <strong>Náměstí</strong> do <strong>Stadionu</strong>.</p>
+          {graph && (
+            <p className="hint-text">Klikejte na uzly na mapě a najděte nejkratší cestu od <strong>{startName}</strong> do <strong>{endName}</strong>.</p>
+          )}
         </div>
       </div>
     );
@@ -110,7 +107,7 @@ export const DijkstraPanel: React.FC = () => {
 
       {phase === 'result' && (
         <div className="dijkstra-done">
-          Algoritmus dokoncen!
+          Algoritmus dokončen!
         </div>
       )}
     </div>
