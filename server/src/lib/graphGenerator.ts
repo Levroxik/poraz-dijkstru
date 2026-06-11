@@ -153,14 +153,14 @@ function buildConnectedGraph(nodes: Node[], rand: () => number): Edge[] {
   }
   candidates.sort((a, b) => a.d - b.d);
 
-  const targetExtras = Math.floor(nodeCount * 0.35);
+  const targetExtras = Math.ceil(nodeCount * 0.7);
   let added = 0;
   for (const c of candidates) {
     if (added >= targetExtras) break;
     // Skip edges that would cross 2+ existing edges (keeps graph readable)
     if (crossingCount(c.i, c.j) >= 2) continue;
     // Small random rejection to add variety in seed-driven output
-    if (rand() < 0.15) continue;
+    if (rand() < 0.1) continue;
     if (addEdge(c.i, c.j)) added++;
   }
 
