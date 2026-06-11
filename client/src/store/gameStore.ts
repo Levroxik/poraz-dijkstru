@@ -138,7 +138,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   finishGame: async () => {
-    const { playerName, playerPath, graph, dijkstraDistance, playerDistance, difficulty } = get();
+    const { playerName, playerPath, graph, difficulty } = get();
     if (!graph) return;
 
     try {

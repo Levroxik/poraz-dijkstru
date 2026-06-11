@@ -39,7 +39,6 @@ export const DijkstraPanel: React.FC = () => {
   const snapshot = dijkstraSnapshots[currentSnapshotIndex];
   if (!snapshot) return null;
 
-  const nodes = graph ? graph.nodes : Object.keys(snapshot.distances).map((id) => ({ id }));
   const totalSteps = dijkstraSnapshots.length;
   const progress = Math.round(((currentSnapshotIndex + 1) / totalSteps) * 100);
 
